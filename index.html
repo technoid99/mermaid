@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>Mermaid Graph Viewer</title>
+  <style>
+    :root {font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2937;background:#f3f5f9}
+    * {box-sizing:border-box}
+    body {margin:0;min-height:100vh}
+    header {background:#111827;color:white;padding:15px 22px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+    header h1 {font-size:18px;margin:0;font-weight:650;letter-spacing:-.02em}
+    header p {font-size:12px;color:#9ca3af;margin:3px 0 0}
+    .toolbar,.actions {display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+    button,select {border:1px solid #cbd5e1;border-radius:7px;background:white;color:#334155;padding:9px 12px;font:inherit;font-size:13px;cursor:pointer}
+    button:hover,select:hover {background:#f1f5f9}
+    button:focus-visible,select:focus-visible,textarea:focus-visible {outline:3px solid #93c5fd;outline-offset:1px}
+    button.primary {background:#2563eb;color:white;border-color:#2563eb;font-weight:600}
+    button.primary:hover {background:#1d4ed8}
+    main {display:grid;grid-template-columns:minmax(290px,39%) minmax(0,61%);gap:15px;padding:15px;height:calc(100vh - 80px);min-height:470px}
+    section {background:white;border:1px solid #dce2ea;border-radius:11px;display:flex;flex-direction:column;min-height:0;overflow:hidden;box-shadow:0 1px 3px #0f172a0b}
+    .panel-head {padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #e5e7eb;flex-wrap:wrap}
+    .panel-head strong {font-size:13px}
+    .muted {color:#64748b;font-size:12px}
+    textarea {display:block;flex:1;width:100%;padding:16px;border:0;resize:none;outline:none;color:#1e293b;background:white;font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2}
+    .editor-foot {padding:9px 14px;border-top:1px solid #e5e7eb;color:#64748b;font-size:12px}
+    .viewer {position:relative;flex:1;min-height:250px;background-color:#fff;background-image:radial-gradient(#dfe5ee .8px,transparent .8px);background-size:20px 20px;overflow:hidden;touch-action:none;cursor:grab}
+    .viewer:active {cursor:grabbing}
+    .diagram {position:absolute;left:50%;top:50%;transform-origin:center center;will-change:transform;min-width:300px;text-align:center;pointer-events:none}
+    .diagram svg {display:block;width:100%;height:auto;max-width:none;overflow:visible}
+    .viewer-controls {position:absolute;right:15px;bottom:15px;display:flex;gap:5px;z-index:2;background:#ffffffeb;padding:6px;border:1px solid #e2e8f0;border-radius:9px;box-shadow:0 3px 10px #0001}
+    .viewer-controls button {padding:7px 11px}
+    .status {padding:9px 14px;border-top:1px solid #e5e7eb;color:#64748b;font-size:12px;min-height:36px;white-space:pre-wrap;overflow-wrap:anywhere}
+    .status.error {color:#b91c1c;background:#fef2f2}
+    .status.success {color:#166534}
+    .hint {position:absolute;top:12px;left:14px;font-size:11px;color:#94a3b8;pointer-events:none}
+    @media(max-width:760px) {main {grid-template-columns:1fr;grid-template-rows:minmax(270px,40vh) minmax(330px,60vh);height:auto;min-height:unset}header {padding:14px} .diagram {min-width:220px}}
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>Mermaid Graph Viewer</h1><p>Write, view and export Mermaid diagrams</p></div>
+    <div class="toolbar">
+      <select id="theme" aria-label="Diagram theme"><option value="default">Light theme</option><option value="dark">Dark theme</option><option value="neutral">Neutral theme</option><option value="forest">Forest theme</option></select>
+      <button id="download" title="Save diagram as SVG">Download SVG</button>
+    </div>
+  </header>
+  <main>
+    <section aria-label="Mermaid code editor">
+      <div class="panel-head"><strong>Mermaid code</strong><div class="actions"><button id="example">Example</button><button id="copy">Copy code</button><button class="primary" id="render">Render ↵</button></div></div>
+      <textarea id="source" spellcheck="false" aria-label="Mermaid source code"></textarea>
+      <div class="editor-foot">Automatically saved in this browser · Ctrl/⌘ + Enter to render</div>
+    </section>
+    <section aria-label="Rendered diagram">
+      <div class="panel-head"><strong>Diagram preview</strong><span class="muted">Scroll to zoom · Drag to pan</span></div>
+      <div class="viewer" id="viewer"><div class="hint" id="hint">Drag to move the diagram</div><div class="diagram" id="diagram"></div><div class="viewer-controls"><button id="zoomOut" aria-label="Zoom out">−</button><button id="reset" aria-label="Fit diagram to view">Fit</button><button id="zoomIn" aria-label="Zoom in">+</button></div></div>
+      <div class="status" id="status" role="status" aria-live="polite">Loading Mermaid…</div>
+    </section>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@12/dist/mermaid.esm.min.mjs';
+    const $ = id => document.getElementById(id);
+    const example = `flowchart LR
+  A[Prevent] --> B[Absorb]
+  B --> C[Respond]
+  C --> D[Adapt]
+  D -. Lessons learned .-> A
+  style A fill:#dbeafe,stroke:#2563eb,color:#1e40af
+  style B fill:#dcfce7,stroke:#16a34a,color:#166534
+  style C fill:#fef3c7,stroke:#d97706,color:#92400e
+  style D fill:#f3e8ff,stroke:#9333ea,color:#6b21a8`;
+    let diagramSvg = '', scale = 1, panX = 0, panY = 0, baseWidth = 600, baseHeight = 400, serial = 0;
+    let currentTheme = localStorage.getItem('mermaid-theme') || 'default';
+    const source = $('source'), diagram = $('diagram'), viewer = $('viewer'), status = $('status');
+    source.value = localStorage.getItem('mermaid-code') ?? example;
+    $('theme').value = currentTheme;
+    function setStatus(message, type='') {status.textContent=message;status.className='status '+type;}
+    function applyTransform() {diagram.style.transform=`translate(calc(-50% + ${panX}px), calc(-50% + ${panY}px)) scale(${scale})`;}
+    function fit() {
+      if (!diagramSvg) return;
+      const r = viewer.getBoundingClientRect();
+      scale = Math.max(.05,Math.min(4,(r.width-50)/baseWidth,(r.height-60)/baseHeight));
+      panX=0;panY=0;applyTransform();
+    }
+    function zoom(factor,x=viewer.clientWidth/2,y=viewer.clientHeight/2) {
+      const next = Math.max(.05,Math.min(10,scale*factor)), ratio = next/scale;
+      panX = (panX + viewer.clientWidth/2-x)*ratio-(viewer.clientWidth/2-x);
+      panY = (panY + viewer.clientHeight/2-y)*ratio-(viewer.clientHeight/2-y);
+      scale=next;applyTransform();
+    }
+    function initMermaid() {mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:currentTheme,flowchart:{htmlLabels:true,useMaxWidth:false},themeVariables:{fontFamily:'Inter, system-ui, sans-serif'}});}
+    function tidyError(err) {return String(err?.message || err).replace(/<[^>]*>/g,'').slice(0,650);}
+    async function render() {
+      const token=++serial, code=source.value.trim();
+      localStorage.setItem('mermaid-code',source.value);
+      if (!code) {setStatus('Enter Mermaid code to view a diagram.','error');return;}
+      setStatus('Rendering…');
+      try {
+        initMermaid();
+        const {svg,bindFunctions}=await mermaid.render('mermaid-render-'+token,code);
+        if (token!==serial) return;
+        diagram.innerHTML=svg;
+        bindFunctions?.(diagram);
+        const element=diagram.querySelector('svg');
+        if (!element) throw new Error('Mermaid did not return an SVG.');
+        const vb=element.viewBox?.baseVal;
+        baseWidth=vb?.width || Number.parseFloat(element.getAttribute('width')) || 600;
+        baseHeight=vb?.height || Number.parseFloat(element.getAttribute('height')) || 400;
+        diagram.style.width=baseWidth+'px';
+        // Force a well-defined SVG viewport for resizing and export.
+        if (!element.getAttribute('viewBox')) element.setAttribute('viewBox',`0 0 ${baseWidth} ${baseHeight}`);
+        element.setAttribute('width',baseWidth);
+        element.setAttribute('height',baseHeight);
+        diagramSvg=new XMLSerializer().serializeToString(element);
+        fit();setStatus('Diagram rendered.');
+      } catch(err) {
+        if (token!==serial) return;
+        // Preserve the previous working diagram when the new code has an error.
+        setStatus('Mermaid error: '+tidyError(err),'error');
+        document.querySelectorAll('body > [id^="dmermaid"], body > [id^="mermaid-render-"]').forEach(el=>el.remove());
+      }
+    }
+    $('render').addEventListener('click',render);
+    source.addEventListener('input',()=>localStorage.setItem('mermaid-code',source.value));
+    source.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();render();} if(e.key==='Tab'){e.preventDefault();const a=source.selectionStart,b=source.selectionEnd;source.setRangeText('  ',a,b,'end');localStorage.setItem('mermaid-code',source.value);}});
+    $('example').addEventListener('click',()=>{source.value=example;render();});
+    $('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(source.value);setStatus('Code copied to clipboard.','success');}catch{source.select();setStatus('Select and copy the code from the editor.');}});
+    $('theme').addEventListener('change',()=>{currentTheme=$('theme').value;localStorage.setItem('mermaid-theme',currentTheme);render();});
+    $('zoomIn').addEventListener('click',()=>zoom(1.25));
+    $('zoomOut').addEventListener('click',()=>zoom(.8));
+    $('reset').addEventListener('click',fit);
+    $('download').addEventListener('click',()=>{
+      if(!diagramSvg){setStatus('Render a diagram before downloading.','error');return;}
+      const blob=new Blob([diagramSvg],{type:'image/svg+xml;charset=utf-8'});
+      const url=URL.createObjectURL(blob),link=document.createElement('a');
+      link.href=url;link.download='mermaid-diagram.svg';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    });
+    viewer.addEventListener('wheel',e=>{e.preventDefault();const rect=viewer.getBoundingClientRect();zoom(Math.exp(-e.deltaY*.001),e.clientX-rect.left,e.clientY-rect.top);},{passive:false});
+    let drag=null;
+    viewer.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;drag={x:e.clientX,y:e.clientY,px:panX,py:panY};viewer.setPointerCapture(e.pointerId);});
+    viewer.addEventListener('pointermove',e=>{if(!drag)return;panX=drag.px+e.clientX-drag.x;panY=drag.py+e.clientY-drag.y;applyTransform();});
+    viewer.addEventListener('pointerup',()=>drag=null);
+    viewer.addEventListener('pointercancel',()=>drag=null);
+    new ResizeObserver(()=>{if(diagramSvg && panX===0 && panY===0)fit();}).observe(viewer);
+    render();
+  </script>
+</body>
+</html>
